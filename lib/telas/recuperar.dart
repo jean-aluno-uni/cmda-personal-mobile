@@ -4,6 +4,10 @@ import '../api.dart';
 import '../widgets.dart';
 import 'login.dart';
 
+Widget mensagem(String? texto, {bool erro = true}) => texto == null
+    ? const SizedBox.shrink()
+    : Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(texto, style: TextStyle(color: erro ? vermelho : verde, fontSize: 13)));
+
 class RecuperarSenhaTela extends StatefulWidget {
   const RecuperarSenhaTela({super.key});
 
@@ -24,8 +28,8 @@ class _RecuperarSenhaTelaState extends State<RecuperarSenhaTela> {
     try {
       await apiCall('/auth/password/forgot', metodo: 'POST', corpo: {'email': _email.text.trim()});
       if (!mounted) return;
-      final mensagem = await Navigator.push(context, MaterialPageRoute(builder: (_) => OtpTela(email: _email.text.trim())));
-      if (mensagem != null && mounted) Navigator.pop(context, mensagem);
+      final resultado = await Navigator.push(context, MaterialPageRoute(builder: (_) => OtpTela(email: _email.text.trim())));
+      if (resultado != null && mounted) Navigator.pop(context, resultado);
     } on ApiErro catch (e) {
       setState(() => _erro = e.mensagem);
     }
@@ -34,13 +38,15 @@ class _RecuperarSenhaTelaState extends State<RecuperarSenhaTela> {
 
   @override
   Widget build(BuildContext context) {
-    return Pagina(
-      cabecalho: const Cabecalho(titulo: 'Recuperar senha', subtitulo: 'Informe o e-mail cadastrado para receber o código'),
+    return PaginaAuth(
+      titulo: 'Recuperar senha',
+      descricao: 'Informe o e-mail cadastrado para receber o código de verificação',
+      icone: Icons.lock_outline,
       filhos: [
-        TextField(controller: _email, keyboardType: TextInputType.emailAddress, decoration: campo('E-mail', dica: 'seu@email.com')),
-        const SizedBox(height: 14),
-        if (_erro != null) Mensagem(_erro!, erro: true),
-        FilledButton(style: botaoPrincipal(), onPressed: _enviando ? null : _enviar, child: const Text('Enviar código')),
+        Campo(rotulo: 'E-mail', controle: _email, dica: 'seu@email.com', teclado: TextInputType.emailAddress),
+        mensagem(_erro),
+        const SizedBox(height: 8),
+        BotaoPrincipal(texto: _enviando ? 'Enviando...' : 'Enviar código', aoTocar: _enviando ? null : _enviar),
       ],
     );
   }
@@ -67,12 +73,10 @@ class _OtpTelaState extends State<OtpTela> {
       _erro = null;
     });
     try {
-      final resposta = await apiCall('/auth/password/otp/verify',
-          metodo: 'POST', corpo: {'email': widget.email, 'codigo': _codigo.text.trim()});
+      final resposta = await apiCall('/auth/password/otp/verify', metodo: 'POST', corpo: {'email': widget.email, 'codigo': _codigo.text.trim()});
       if (!mounted) return;
-      final mensagem = await Navigator.push(
-          context, MaterialPageRoute(builder: (_) => NovaSenhaTela(resetToken: resposta['resetToken'])));
-      if (mensagem != null && mounted) Navigator.pop(context, mensagem);
+      final resultado = await Navigator.push(context, MaterialPageRoute(builder: (_) => NovaSenhaTela(resetToken: resposta['resetToken'])));
+      if (resultado != null && mounted) Navigator.pop(context, resultado);
     } on ApiErro catch (e) {
       setState(() => _erro = e.mensagem);
     }
@@ -93,21 +97,28 @@ class _OtpTelaState extends State<OtpTela> {
 
   @override
   Widget build(BuildContext context) {
-    return Pagina(
-      cabecalho: Cabecalho(titulo: 'Código de verificação', subtitulo: 'Digite o código de 6 dígitos enviado para ${widget.email}'),
+    return PaginaAuth(
+      titulo: 'Verificação',
+      descricao: 'Digite o código de 6 dígitos enviado para ${widget.email}',
+      icone: Icons.mark_email_read_outlined,
       filhos: [
         TextField(
           controller: _codigo,
           keyboardType: TextInputType.number,
           maxLength: 6,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 28, letterSpacing: 12),
-          decoration: campo('Código'),
+          style: const TextStyle(fontSize: 28, letterSpacing: 14, fontWeight: FontWeight.bold),
+          decoration: InputDecoration(
+            counterText: '',
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: vermelho, width: 1.5)),
+          ),
         ),
-        if (_erro != null) Mensagem(_erro!, erro: true),
-        if (_info != null) Mensagem(_info!),
-        FilledButton(style: botaoPrincipal(), onPressed: _enviando ? null : _verificar, child: const Text('Verificar')),
-        Center(child: TextButton(onPressed: _reenviar, child: const Text('Reenviar código', style: TextStyle(color: vermelho)))),
+        const SizedBox(height: 16),
+        mensagem(_erro),
+        mensagem(_info, erro: false),
+        BotaoPrincipal(texto: _enviando ? 'Verificando...' : 'Verificar', aoTocar: _enviando ? null : _verificar),
+        TextButton(onPressed: _reenviar, child: const Text('Reenviar código', style: TextStyle(color: vermelho))),
       ],
     );
   }
@@ -156,25 +167,26 @@ class _NovaSenhaTelaState extends State<NovaSenhaTela> {
 
   @override
   Widget build(BuildContext context) {
-    return Pagina(
-      cabecalho: const Cabecalho(titulo: 'Nova senha', subtitulo: 'Crie uma senha segura para a sua conta'),
+    return PaginaAuth(
+      titulo: 'Nova senha',
+      descricao: 'Crie uma senha segura para a sua conta',
+      icone: Icons.key_outlined,
       filhos: [
-        TextField(controller: _senha, obscureText: true, onChanged: (_) => setState(() {}), decoration: campo('Nova senha')),
-        const SizedBox(height: 14),
-        TextField(controller: _confirmacao, obscureText: true, decoration: campo('Confirmar senha')),
-        const SizedBox(height: 14),
+        Campo(rotulo: 'Nova senha', controle: _senha, senha: true, aoMudar: (_) => setState(() {})),
+        Campo(rotulo: 'Confirmar senha', controle: _confirmacao, senha: true),
         for (final (texto, regra) in _regras)
-          Row(
-            children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(children: [
               Icon(regra.hasMatch(_senha.text) ? Icons.check_circle : Icons.radio_button_unchecked,
-                  size: 18, color: regra.hasMatch(_senha.text) ? verde : cinza),
+                  size: 18, color: regra.hasMatch(_senha.text) ? verde : cinzaClaro),
               const SizedBox(width: 8),
-              Text(texto, style: const TextStyle(color: cinza)),
-            ],
+              Text(texto, style: const TextStyle(color: cinza, fontSize: 13)),
+            ]),
           ),
-        const SizedBox(height: 14),
-        if (_erro != null) Mensagem(_erro!, erro: true),
-        FilledButton(style: botaoPrincipal(), onPressed: _enviando ? null : _salvar, child: const Text('Salvar nova senha')),
+        const SizedBox(height: 16),
+        mensagem(_erro),
+        BotaoPrincipal(texto: _enviando ? 'Salvando...' : 'Salvar nova senha', aoTocar: _enviando ? null : _salvar),
       ],
     );
   }

@@ -11,38 +11,6 @@ String saudacao() {
   return 'Boa noite';
 }
 
-class StatusObd extends StatelessWidget {
-  const StatusObd({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: Obd.instancia,
-      builder: (context, _) {
-        final obd = Obd.instancia;
-        final texto = obd.conectando
-            ? 'Conectando...'
-            : obd.conectado
-                ? 'Bluetooth: ${obd.dispositivo}'
-                : 'Bluetooth desconectado';
-        return Padding(
-          padding: const EdgeInsets.only(top: 14),
-          child: OutlinedButton.icon(
-            onPressed: () => Navigator.pushNamed(context, '/conexao'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Colors.white54),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-            icon: Icon(obd.conectado ? Icons.bluetooth_connected : Icons.bluetooth_disabled),
-            label: Text(texto),
-          ),
-        );
-      },
-    );
-  }
-}
-
 class HomeTela extends StatefulWidget {
   const HomeTela({super.key});
 
@@ -55,6 +23,7 @@ class _HomeTelaState extends State<HomeTela> with AtualizacaoPeriodica {
   Map? _veiculo;
   Map? _telemetria;
   Map? _alertas;
+  bool _alterando = false;
 
   @override
   Future<void> buscar() async {
@@ -71,108 +40,176 @@ class _HomeTelaState extends State<HomeTela> with AtualizacaoPeriodica {
     _alertas = respostas[3];
   }
 
-  Widget _temperatura(IconData icone, num? valor, String rotulo, num limite) {
-    final alto = valor != null && valor > limite;
-    return Expanded(
-      child: Column(
+  Future<void> _alternarConexao(bool conectado) async {
+    if (!conectado) {
+      Navigator.pushNamed(context, '/conexao');
+      return;
+    }
+    setState(() => _alterando = true);
+    await Obd.instancia.desconectar();
+    await carregar();
+    if (mounted) setState(() => _alterando = false);
+  }
+
+  Widget _hero() {
+    final conectado = _veiculo?['conectado'] == true;
+    return SizedBox(
+      height: 210,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Icon(icone, color: alto ? vermelho : azul),
-          Text('${numero(valor)} °C', style: TextStyle(fontWeight: FontWeight.bold, color: alto ? vermelho : textoEscuro)),
-          Text(rotulo, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: cinza)),
+          Container(color: Colors.white),
+          Image.asset(conectado ? 'assets/img/carro.png' : 'assets/img/carro-desativado.png', fit: BoxFit.cover),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Color(0x8C000000), Colors.transparent], begin: Alignment.bottomCenter, end: Alignment.topCenter),
+              ),
+              child: Center(
+                child: FilledButton.icon(
+                  onPressed: _veiculo == null || _alterando ? null : () => _alternarConexao(conectado),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: conectado ? const Color(0xBFC2182B) : const Color(0x1FFFFFFF),
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0x66FFFFFF), width: 1.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  icon: const Icon(Icons.bluetooth, size: 18),
+                  label: Text(_alterando ? 'Desconectando...' : conectado ? 'Desconectar' : 'Conectar ao veículo'),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  List<Widget> _conteudo() {
-    if (carregando) return [const Carregando()];
-    if (erro != null && _telemetria == null) return [Mensagem(erro!, erro: true)];
-    final t = _telemetria!;
-    final alertas = (_alertas?['tabelaAlertas'] as List?) ?? [];
-    return [
-      if (erro != null) Mensagem(erro!, erro: true),
-      const Secao('Visão geral'),
-      if (t['disponivel'] != true)
-        const Mensagem('Veículo não conectado. Conecte pelo Bluetooth para receber as leituras.', icone: Icons.bluetooth_disabled)
-      else ...[
-        Cartao(
-          titulo: 'Condições do motor',
-          aoTocar: () => Navigator.pushNamed(context, '/condicoes'),
-          child: Row(children: [
-            _temperatura(Icons.water_drop_outlined, t['tempLiquido'], 'Líquido de arrefecimento', 105),
-            _temperatura(Icons.oil_barrel_outlined, t['tempOleo'], 'Óleo', 120),
-            _temperatura(Icons.air, t['tempAr'], 'Ar de admissão', 45),
-          ]),
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: Cartao(
-                titulo: 'Velocidade',
-                child: Column(children: [
-                  const Icon(Icons.speed, color: cinza, size: 32),
-                  Text('${numero(t['velocidadeKmh'])} km/h', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                ]),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Cartao(
-                titulo: 'RPM',
-                aoTocar: () => Navigator.pushNamed(context, '/rpm'),
-                child: Column(children: [
-                  Icon(Icons.rotate_right, color: (t['rpm'] ?? 0) > 4000 ? vermelho : cinza, size: 32),
-                  Text(numero(t['rpm']), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                ]),
-              ),
-            ),
-          ],
-        ),
-        Cartao(
-          titulo: 'Bateria',
-          child: Row(children: [
-            Icon(Icons.battery_charging_full,
-                color: (t['tensaoBateriaV'] ?? 13) < 12 || (t['tensaoBateriaV'] ?? 13) > 15 ? vermelho : verde),
-            const SizedBox(width: 8),
-            Text('${numero(t['tensaoBateriaV'], casas: 1)} V', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Spacer(),
-            Text('atualizado ${tempoRelativo(t['dataHora'])}', style: const TextStyle(fontSize: 12, color: cinza)),
-          ]),
-        ),
-      ],
-      Cartao(
-        titulo: 'Alertas nas últimas 24 horas (${_alertas?['total'] ?? 0})',
-        aoTocar: () => Navigator.pushNamedAndRemoveUntil(context, '/alertas', (_) => false),
-        child: alertas.isEmpty
-            ? const Text('Nenhum alerta no período.', style: TextStyle(color: cinza))
-            : Column(
-                children: [
-                  for (final alerta in alertas)
-                    ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(radius: 5, backgroundColor: corDaOrigem(alerta['origem'])),
-                      title: Text(alerta['titulo']),
-                      subtitle: Text('${tempoRelativo(alerta['dataHora'])} · ${nomeDaOrigem(alerta['origem'])}'),
-                    ),
-                ],
-              ),
+  Widget _temperatura(IconData icone, Color cor, num? valor, String rotulo, num limite) {
+    final alto = valor != null && valor > limite;
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icone, color: valor == null ? const Color(0xFFD1D5DB) : (alto ? vermelho : cor), size: 22),
+          const SizedBox(height: 4),
+          Text('${grau(valor)}${alto ? ' ⚠' : ''}',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: valor == null ? cinzaClaro : (alto ? vermelho : textoEscuro))),
+          Text(rotulo, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: cinza)),
+        ],
       ),
-    ];
+    );
   }
+
+  String _semDados() => _telemetria?['motivo'] == 'sem_leituras' ? 'Nenhuma leitura recebida' : 'Veículo não conectado';
 
   @override
   Widget build(BuildContext context) {
-    final nome = (_usuario?['nome'] as String?)?.split(' ').first ?? '';
+    final t = (_telemetria?['disponivel'] == true) ? _telemetria : null;
+    final nome = (_usuario?['nome'] as String?) ?? '';
+    final alertas = ((_alertas?['tabelaAlertas'] as List?) ?? []).take(3).toList();
+    final restantes = ((_alertas?['total'] ?? 0) as int) - alertas.length;
+    final rpm = t?['rpm'] as num?;
+    final rpmForaDaFaixa = rpm != null && (rpm < rpmMinimo || rpm > rpmMaximo);
+
     return Pagina(
-      indice: 0,
-      cabecalho: Cabecalho(
-        titulo: '${saudacao()}${nome.isEmpty ? '' : ', $nome'}',
-        subtitulo: _veiculo == null ? null : '${_veiculo!['marca']} ${_veiculo!['modelo']} · ${_veiculo!['placa']}',
-        voltar: false,
-        extra: const StatusObd(),
-      ),
-      filhos: _conteudo(),
+      ativo: '/home',
+      cabecalho: Cabecalho(titulo: '${saudacao()}${nome.isEmpty ? '' : ', $nome'}'),
+      topo: _hero(),
+      filhos: [
+        if (erro != null) Aviso(erro!, erro: true),
+        const Secao('Overview'),
+        Cartao(
+          aoTocar: () => Navigator.pushNamed(context, '/condicoes'),
+          child: Column(children: [
+            const TituloCartao('Condições do motor', subtitulo: 'Temperaturas', seta: true),
+            const SizedBox(height: 14),
+            Row(children: [
+              _temperatura(Icons.water_drop_outlined, azul, t?['tempLiquido'], 'Líquido de arrefecimento', limiteLiquido),
+              _temperatura(Icons.opacity, amarelo, t?['tempOleo'], 'Óleo', limiteOleo),
+              _temperatura(Icons.air, cinzaClaro, t?['tempAr'], 'Ar de admissão', limiteAr),
+            ]),
+          ]),
+        ),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Cartao(
+                  child: Column(children: [
+                    const TituloCartao('Velocidade'),
+                    const SizedBox(height: 18),
+                    const Icon(Icons.speed, color: cinza, size: 30),
+                    const SizedBox(height: 6),
+                    if (t != null && t['velocidadeKmh'] != null)
+                      Text.rich(TextSpan(children: [
+                        TextSpan(text: '${(t['velocidadeKmh'] as num).round()} ', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                        const TextSpan(text: 'km/h', style: TextStyle(fontSize: 13, color: cinza)),
+                      ]))
+                    else ...[
+                      const Text('—', style: TextStyle(fontSize: 26, color: cinzaClaro)),
+                      if (!carregando) Text(_semDados(), textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: cinza)),
+                    ],
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Cartao(
+                  aoTocar: () => Navigator.pushNamed(context, '/alertas'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const TituloCartao('Alertas', seta: true),
+                      const SizedBox(height: 8),
+                      if (alertas.isEmpty && !carregando) const Text('Nenhum alerta nas últimas 24h', style: TextStyle(fontSize: 12, color: cinza)),
+                      for (final a in alertas)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(padding: const EdgeInsets.only(top: 4), child: CircleAvatar(radius: 4.5, backgroundColor: corDoNivel(a['nivel']))),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(a['titulo'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: textoEscuro)),
+                                  Text('${tempoRelativo(a['dataHora'])} · ${nomeDaOrigem(a['origem'])}', style: const TextStyle(fontSize: 11, color: cinza)),
+                                ]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (restantes > 0) Text('+$restantes ${restantes == 1 ? 'alerta' : 'alertas'}', style: const TextStyle(fontSize: 12, color: cinza)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Cartao(
+          aoTocar: () => Navigator.pushNamed(context, '/rpm'),
+          child: Column(children: [
+            const TituloCartao('RPM', seta: true),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.av_timer, color: vermelho, size: 28),
+                const SizedBox(width: 8),
+                Text(rpm == null ? '—' : milhar(rpm), style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: rpm == null ? cinzaClaro : textoEscuro)),
+                if (rpmForaDaFaixa) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.warning_rounded, color: vermelho, size: 18)),
+              ],
+            ),
+          ]),
+        ),
+      ],
     );
   }
 }

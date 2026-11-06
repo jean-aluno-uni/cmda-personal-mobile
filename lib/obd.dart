@@ -93,11 +93,15 @@ class Obd extends ChangeNotifier {
     aviso = '$motivo Tentando reconectar...';
     notifyListeners();
     await _avisarApi(false);
-    while (!conectado && !_manual && _endereco != null) {
-      await Future.delayed(const Duration(seconds: 5));
-      if (_manual || conectando) continue;
+    for (var tentativa = 0; tentativa < 8 && !conectado && !_manual && _endereco != null; tentativa++) {
+      await Future.delayed(const Duration(seconds: 6));
+      if (_manual || conectando || conectado) continue;
       await conectar(_endereco!, dispositivo ?? 'veículo');
       if (!conectado && !_manual) aviso = '$motivo Tentando reconectar...';
+    }
+    if (!conectado && !_manual) {
+      aviso = 'O adaptador não respondeu. Confira se ele está ligado e toque nele para conectar de novo.';
+      notifyListeners();
     }
   }
 

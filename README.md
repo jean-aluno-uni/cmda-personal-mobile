@@ -24,9 +24,11 @@ ELM327 ou simulador  <- Bluetooth ->  aplicativo CMDA  <- HTTP JSON ->  API Fast
 3. O app inicializa o adaptador com `ATZ`, `ATE0`, `ATL0`, `ATS0`, `ATH0` e `ATSP0` e avisa a API com `POST /vehicles/{id}/connect`.
 4. A cada 2 segundos pede RPM `010C`, velocidade `010D`, líquido de arrefecimento `0105`, óleo `015C`, ar de admissão `010F`, tensão `0142` e códigos de falha `03`.
 5. Converte as respostas e envia a leitura em `POST /vehicles/{id}/readings`. Cada código de falha novo vira um alerta em `POST /vehicles/{id}/alerts`.
-6. Se o adaptador parar de responder, o app avisa a API com `disconnect` e tenta reconectar a cada 5 segundos.
+6. Se o adaptador parar de responder, o app avisa a API com `disconnect` e tenta reconectar a cada 6 segundos, por no máximo 8 tentativas. Depois disso, o app para de tentar e o usuário conecta de novo pela tela de conexão.
 
 As telas consultam a API a cada 3 segundos, então mostram o que está gravado no banco, inclusive os alertas e o diagnóstico que a API gera a partir das leituras.
+
+O visual segue o design system do frontend web e dos protótipos do documento, com a cor `#C2182B`, o cabeçalho em degradê com o sino de alertas e a foto do perfil, e a navegação inferior com Home, Diagnóstico e Perfil. A foto do veículo e a foto do perfil ficam em `assets/img`, as mesmas usadas no frontend web.
 
 ## Telas
 
@@ -58,8 +60,9 @@ lib/
 1. No notebook, suba a API escutando na rede com `uvicorn app.main:app --host 0.0.0.0 --port 8000` e libere a porta 8000 no firewall.
 2. Ligue o celular e o notebook na mesma rede. O roteador do próprio celular é o mais seguro.
 3. Pareie o celular com o notebook e rode o simulador, conforme o README dele.
-4. No app, abra Servidor da API na tela de login e informe `http://<ip-do-notebook>:8000/api/v1`.
-5. Entre com `demo@cmda.app` e `Demo@1234`, toque no botão de Bluetooth do painel e conecte no notebook.
+4. No Android, renomeie o notebook pareado para `OBDII`. O app mostra o apelido do dispositivo, então ele aparece com o nome de um adaptador real.
+5. No app, abra Servidor da API na tela de login e informe `http://<ip-do-notebook>:8000/api/v1`.
+6. Entre com `demo@cmda.app` e `Demo@1234`, toque em Conectar ao veículo no painel e escolha o `OBDII`.
 
 ## Gerar o APK
 

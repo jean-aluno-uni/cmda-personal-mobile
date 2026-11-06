@@ -18,9 +18,9 @@ class _PerfilTelaState extends State<PerfilTela> with AtualizacaoPeriodica {
 
   @override
   Future<void> buscar() async {
-    final id = Sessao.veiculoId;
-    _usuario = await apiCall('/users/me');
-    _veiculo = await apiCall('/vehicles/$id');
+    final respostas = await Future.wait([apiCall('/users/me'), apiCall('/vehicles/${Sessao.veiculoId}')]);
+    _usuario = respostas[0];
+    _veiculo = respostas[1];
   }
 
   Future<void> _sair() async {
@@ -30,15 +30,48 @@ class _PerfilTelaState extends State<PerfilTela> with AtualizacaoPeriodica {
       await apiCall('/auth/logout', metodo: 'POST');
     } on ApiErro catch (_) {}
     Sessao.limpar();
+    modeloVeiculo.value = '';
+    alertasCriticos.value = 0;
     if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
-  Widget _linha(String rotulo, String valor) {
+  Future<void> _alternarConexao() async {
+    if (_veiculo?['conectado'] != true) {
+      Navigator.pushNamed(context, '/conexao');
+      return;
+    }
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Desconectar veículo'),
+        content: Text('Deseja desconectar o veículo ${_veiculo?['modelo'] ?? ''}? Os dados de telemetria não serão mais exibidos.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: cinza))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: vermelho),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Desconectar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    await Obd.instancia.desconectar();
+    await carregar();
+  }
+
+  Widget _campo(String rotulo, String valor) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(rotulo, style: const TextStyle(fontSize: 12, color: cinza)),
-        Text(valor, style: const TextStyle(fontSize: 15, color: textoEscuro)),
+        Text(rotulo, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(color: fundo, borderRadius: BorderRadius.circular(12), border: Border.all(color: borda)),
+          child: Text(valor, style: const TextStyle(color: cinza)),
+        ),
       ]),
     );
   }
@@ -47,63 +80,96 @@ class _PerfilTelaState extends State<PerfilTela> with AtualizacaoPeriodica {
   Widget build(BuildContext context) {
     final u = _usuario;
     final v = _veiculo;
-    final nome = (u?['nome'] ?? '') as String;
-    final iniciais = nome.split(' ').where((p) => p.isNotEmpty).take(2).map((p) => p[0]).join();
+    final conectado = v?['conectado'] == true;
+
     return Pagina(
-      indice: 3,
-      cabecalho: const Cabecalho(titulo: 'Perfil', subtitulo: 'Sua conta e seu veículo', voltar: false),
+      ativo: '/perfil',
+      cabecalho: const Cabecalho(titulo: 'Perfil'),
       filhos: [
-        if (carregando) const Carregando(),
-        if (erro != null) Mensagem(erro!, erro: true),
-        if (u != null) ...[
-          Center(
+        if (erro != null) Aviso(erro!, erro: true),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 12),
             child: Column(children: [
-              CircleAvatar(radius: 36, backgroundColor: vermelho, child: Text(iniciais, style: const TextStyle(color: Colors.white, fontSize: 24))),
-              const SizedBox(height: 8),
-              Text(nome, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              Text(u['email'], style: const TextStyle(color: cinza)),
-            ]),
-          ),
-          const SizedBox(height: 16),
-          Cartao(
-            titulo: 'Informações da conta',
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _linha('Nome', nome),
-              _linha('E-mail', u['email']),
-              _linha('Servidor da API', Sessao.servidor),
-            ]),
-          ),
-        ],
-        if (v != null)
-          Cartao(
-            titulo: 'Veículo',
-            child: Row(children: [
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${v['marca']} ${v['modelo']} ${v['ano'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Placa ${v['placa']} · ${v['combustivel'] ?? ''}', style: const TextStyle(color: cinza)),
-                ]),
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: vermelho),
+                child: const CircleAvatar(radius: 38, backgroundImage: AssetImage('assets/img/foto-perfil.png')),
               ),
-              Selo(v['conectado'] ? 'Conectado' : 'Desconectado', v['conectado'] ? verde : cinza),
+              const SizedBox(height: 10),
+              Text(u?['nome'] ?? (carregando ? 'Carregando...' : ''), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(u?['email'] ?? '', style: const TextStyle(color: cinza, fontSize: 13)),
             ]),
-          ),
-        ListenableBuilder(
-          listenable: Obd.instancia,
-          builder: (context, _) => Cartao(
-            titulo: 'Adaptador OBD2',
-            aoTocar: () => Navigator.pushNamed(context, '/conexao'),
-            child: Text(Obd.instancia.conectado ? 'Conectado em ${Obd.instancia.dispositivo}' : 'Nenhum adaptador conectado'),
           ),
         ),
-        OutlinedButton(
-          onPressed: _saindo ? null : _sair,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: vermelho,
-            side: const BorderSide(color: vermelho),
-            minimumSize: const Size.fromHeight(50),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        const Secao('Informações da conta'),
+        Cartao(
+          padding: EdgeInsets.zero,
+          margem: 8,
+          child: Column(children: [
+            _campo('Nome', u?['nome'] ?? ''),
+            const Divider(height: 1, color: borda),
+            _campo('E-mail', u?['email'] ?? ''),
+            const Divider(height: 1, color: borda),
+            _campo('Senha', '••••••••'),
+          ]),
+        ),
+        GestureDetector(
+          onTap: () => Navigator.pushNamed(context, '/recuperar'),
+          child: const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 12),
+            child: Text('Alterar senha', style: TextStyle(color: vermelho, fontSize: 13, fontWeight: FontWeight.w600)),
           ),
-          child: Text(_saindo ? 'Saindo...' : 'Sair da conta'),
+        ),
+        const Secao('Veículo conectado'),
+        Cartao(
+          child: v == null
+              ? Text(carregando ? 'Carregando...' : '', style: const TextStyle(color: cinza))
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${v['marca']} ${v['modelo']}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        Text('Placa: ${v['placa']}', style: const TextStyle(fontSize: 13, color: cinza)),
+                      ]),
+                    ),
+                    Selo(conectado ? 'Conectado' : 'Desconectado', conectado ? TipoSelo.ok : TipoSelo.alto),
+                  ]),
+                  ListenableBuilder(
+                    listenable: Obd.instancia,
+                    builder: (context, _) => Obd.instancia.conectado
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text('Adaptador OBD2: ${Obd.instancia.dispositivo}', style: const TextStyle(fontSize: 12, color: cinza)),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ]),
+        ),
+        const Secao('Conta'),
+        Cartao(
+          child: Column(children: [
+            OutlinedButton(
+              onPressed: v == null ? null : _alternarConexao,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: vermelho,
+                side: const BorderSide(color: vermelho, width: 2),
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(conectado ? 'Desconectar veículo' : 'Conectar veículo'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _saindo ? null : _sair,
+              style: FilledButton.styleFrom(
+                backgroundColor: vermelho,
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text(_saindo ? 'Saindo...' : 'Sair'),
+            ),
+          ]),
         ),
       ],
     );
