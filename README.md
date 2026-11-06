@@ -55,14 +55,63 @@ lib/
 └── telas/             uma tela por arquivo
 ```
 
-## Rodar a demonstração
+## Roteiro completo da demonstração
 
-1. No notebook, suba a API escutando na rede com `uvicorn app.main:app --host 0.0.0.0 --port 8000` e libere a porta 8000 no firewall.
-2. Ligue o celular e o notebook na mesma rede. O roteador do próprio celular é o mais seguro.
-3. Pareie o celular com o notebook e rode o simulador, conforme o README dele.
-4. No Android, renomeie o notebook pareado para `OBDII`. O app mostra o apelido do dispositivo, então ele aparece com o nome de um adaptador real.
-5. No app, abra Servidor da API na tela de login e informe `http://<ip-do-notebook>:8000/api/v1`.
-6. Entre com `demo@cmda.app` e `Demo@1234`, toque em Conectar ao veículo no painel e escolha o `OBDII`.
+Este é o passo a passo para montar a demonstração do jeito que o grupo usa na apresentação, com o notebook fazendo o papel do carro e o celular rodando o app. Precisa de um notebook Windows com Bluetooth, Python 3.14, MySQL 8 e um celular Android 7.0 ou superior.
+
+### 1. Banco e API no notebook
+
+Siga o README do [cmda-personal-backend](https://github.com/jean-aluno-uni/cmda-personal-backend) para criar o ambiente virtual, configurar o `.env`, aplicar as migrations e rodar o seed. Depois suba a API escutando na rede, e não só em `127.0.0.1`.
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### 2. Liberar a API para o celular
+
+O Windows bloqueia conexões vindas de outros aparelhos, principalmente quando o Wi-Fi está marcado como rede pública. Abra o PowerShell como administrador e rode os dois comandos abaixo uma única vez. O primeiro desliga regras antigas que bloqueiam o Python, e o segundo libera a porta da API.
+
+```bash
+Get-NetFirewallRule -DisplayName "python.exe" | Where-Object Action -eq Block | Disable-NetFirewallRule
+```
+
+```bash
+New-NetFirewallRule -DisplayName "CMDA API 8000" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+```
+
+Para desfazer depois da apresentação, rode `Remove-NetFirewallRule -DisplayName "CMDA API 8000"` como administrador.
+
+### 3. Rede
+
+Ligue o celular e o notebook no mesmo Wi-Fi. Redes de faculdade costumam isolar os aparelhos, então o mais seguro é ligar o notebook no roteador do próprio celular. Descubra o IP do notebook com o comando `ipconfig`, na linha Endereço IPv4 do adaptador Wi-Fi.
+
+### 4. Bluetooth e simulador
+
+1. Pareie o celular com o notebook nas configurações de Bluetooth.
+2. No Windows, abra Configurações, Bluetooth e dispositivos, Dispositivos, Mais configurações de Bluetooth, aba Portas COM. Deixe **uma única** porta do tipo Entrada. Se não houver nenhuma, clique em Adicionar e escolha Entrada.
+3. No celular, renomeie o notebook pareado para `OBDII`, para ele aparecer no app com o nome de um adaptador real.
+4. Rode o simulador na porta de entrada, conforme o README do [cmda-personal-simulador](https://github.com/jean-aluno-uni/cmda-personal-simulador).
+
+### 5. Aplicativo
+
+1. Instale o APK da página de [Releases](https://github.com/jean-aluno-uni/cmda-personal-mobile/releases/latest).
+2. Na tela de login, abra Servidor da API e informe `http://<ip-do-notebook>:8000/api/v1`.
+3. Entre com `demo@cmda.app` e `Demo@1234`.
+4. No painel, toque em Conectar ao veículo, permita o acesso a dispositivos próximos e escolha o `OBDII`.
+
+O terminal do simulador mostra `aplicativo conectado na COMx` e, a cada 2 segundos, uma linha com os valores enviados. As telas do app atualizam sozinhas.
+
+### Problemas comuns
+
+| Sintoma | Causa e solução |
+|---|---|
+| Não foi possível conectar ao servidor | Celular em outra rede, IP errado ou firewall bloqueando. Confira o IP com `ipconfig` e rode os comandos do passo 2 |
+| Não foi possível conectar no adaptador | Simulador fechado ou escutando na porta errada. Deixe só uma porta de Entrada e rode o simulador nela |
+| O Android mostra Não é possível conectar-se a OBDII | Aviso do próprio Android quando o adaptador não responde, normal durante o cenário de queda do simulador |
+| Nenhum dispositivo pareado | O notebook não foi pareado ou o Bluetooth do celular está desligado |
+| Telas sem dados com o veículo conectado | A API não está recebendo leituras. Confira se o simulador mostra as linhas de envio |
+
+Se o Bluetooth falhar na hora da apresentação, rode o simulador no modo reserva com `--api`, que manda as leituras direto para a API, e as telas do app continuam mudando.
 
 ## Gerar o APK
 
